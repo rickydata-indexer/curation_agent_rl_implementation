@@ -275,13 +275,17 @@ class RLCurationAgent:
         self.epsilon = max(self.epsilon_end, self.epsilon * self.epsilon_decay)
         self.steps += 1
     
-    def calculate_reward(self, old_state: np.ndarray, new_state: np.ndarray) -> float:
+    def calculate_reward(self, old_state: np.ndarray, new_state: np.ndarray, 
+                        interest_rate: float = 0.01, time_step: int = 1) -> float:
         """
-        Calculate reward based on change in portfolio value.
+        Calculate reward following Section 4.2 of the paper.
+        Includes exponential decay and terminal position value.
         
         Args:
             old_state: Previous state
             new_state: Current state
+            interest_rate: Risk-free rate for reward discounting
+            time_step: Current step in the episode
             
         Returns:
             Reward value
@@ -291,20 +295,25 @@ class RLCurationAgent:
         old_aprs = old_state[::n_features]  # Every n_features value starting from 0
         new_aprs = new_state[::n_features]
         
-        # Calculate reward based on APR improvement
+        # Calculate immediate rewards based on APR improvement
         apr_changes = new_aprs - old_aprs
-        
-        # Reward function with balanced positive and negative rewards
-        rewards = []
+        immediate_rewards = []
         for change in apr_changes:
             if change > 0:
-                rewards.append(5 * change)  # Positive reward
+                immediate_rewards.append(5 * change)  # Positive reward
             else:
-                rewards.append(10 * change)  # Negative reward
+                immediate_rewards.append(10 * change)  # Negative reward
         
-        # Add smaller bonus for APR spread
-        apr_bonus = (new_aprs.max() - new_aprs.min())
-        reward = np.mean(rewards) + apr_bonus
+        # Calculate terminal position value (APR spread)
+        terminal_value = new_aprs.max() - new_aprs.min()
+        
+        # Apply exponential decay to immediate rewards
+        decay_factor = np.exp(-interest_rate * time_step)
+        discounted_rewards = [r * decay_factor for r in immediate_rewards]
+        
+        # Combine immediate rewards and terminal value
+        # G_t = sum(e^(-r·(s-t)) * R_s) + I_T * X_T
+        reward = np.mean(discounted_rewards) + terminal_value
         
         return float(reward)
 
@@ -370,9 +379,13 @@ class RLCurationAgent:
         result_df = pd.DataFrame(results)
         
         if training:
-            # Calculate new state and reward
+            # Calculate new state and reward with time step
             new_state = self.get_state({'new_signals': results})
-            reward = self.calculate_reward(current_state, new_state)
+            reward = self.calculate_reward(
+                current_state, 
+                new_state,
+                time_step=self.steps
+            )
             done = False  # In this case, each optimization is a single step
             
             # Store experience

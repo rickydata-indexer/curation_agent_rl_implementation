@@ -16,9 +16,37 @@ class SignalPreprocessor:
         self.feature_stds = None
         self.optimal_coefficients = None
     
+    def find_local_extrema(self, signal: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Find local maxima and mean crossings in the signal.
+        Following Section 3.1 of the paper.
+        
+        Args:
+            signal: Time series signal
+            
+        Returns:
+            Tuple of (local maxima indices, mean crossing indices)
+        """
+        mean = np.mean(signal)
+        n = len(signal)
+        maxima_indices = []
+        crossing_indices = []
+        
+        # Find local maxima (odd-numbered moments)
+        for i in range(1, n-1):
+            if signal[i] > signal[i-1] and signal[i] > signal[i+1]:
+                maxima_indices.append(i)
+        
+        # Find mean crossings (even-numbered moments)
+        signs = np.sign(signal - mean)
+        crossings = np.where(np.diff(signs) != 0)[0]
+        crossing_indices = [i for i in crossings if i > 0]
+        
+        return np.array(maxima_indices), np.array(crossing_indices)
+    
     def calculate_mean_reversion_time(self, data: pd.DataFrame, coefficients: np.ndarray) -> float:
         """
-        Calculate empirical mean reversion time for a given set of coefficients.
+        Calculate empirical mean reversion time following Section 3.1 of the paper.
         
         Args:
             data: DataFrame containing historical APR and signal data
@@ -30,17 +58,42 @@ class SignalPreprocessor:
         # Combine features using coefficients
         combined_signal = np.dot(data[['apr', 'signal_amount', 'weekly_queries']], coefficients)
         
-        # Calculate deviations from mean
-        mean_signal = np.mean(combined_signal)
-        deviations = combined_signal - mean_signal
+        # Find local extrema and mean crossings
+        maxima_indices, crossing_indices = self.find_local_extrema(combined_signal)
         
-        # Find zero crossings
-        zero_crossings = np.where(np.diff(np.signbit(deviations)))[0]
-        if len(zero_crossings) < 2:
+        if len(maxima_indices) < 1 or len(crossing_indices) < 1:
             return float('inf')
         
-        # Calculate average time between crossings
-        reversion_times = np.diff(zero_crossings)
+        # Construct sequence of time moments
+        time_moments = []
+        max_idx = 0
+        cross_idx = 0
+        
+        while max_idx < len(maxima_indices) and cross_idx < len(crossing_indices):
+            # Add local maximum (odd-numbered moment)
+            if len(time_moments) == 0 or maxima_indices[max_idx] > time_moments[-1]:
+                time_moments.append(maxima_indices[max_idx])
+                max_idx += 1
+            
+            # Add mean crossing (even-numbered moment)
+            if cross_idx < len(crossing_indices) and crossing_indices[cross_idx] > time_moments[-1]:
+                time_moments.append(crossing_indices[cross_idx])
+                cross_idx += 1
+            else:
+                break
+        
+        if len(time_moments) < 2:
+            return float('inf')
+        
+        # Calculate average time between extremes and crossings
+        reversion_times = []
+        for i in range(1, len(time_moments), 2):
+            if i < len(time_moments):
+                reversion_times.append(time_moments[i] - time_moments[i-1])
+        
+        if not reversion_times:
+            return float('inf')
+        
         return np.mean(reversion_times)
     
     def optimize_coefficients(self, historical_data: pd.DataFrame) -> np.ndarray:
