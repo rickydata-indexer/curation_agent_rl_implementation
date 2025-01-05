@@ -319,4 +319,3 @@ Implementation based on:
   - Q-learning implementation (Section 2)
   - Action selection strategy (Section 3)
   - Training methodology (Section 6)
-  - Limitations and future work (Section 4)
