@@ -165,3 +165,11 @@ Implementation based on:
   - Q-learning implementation (Section 2)
   - Action selection strategy (Section 3)
   - Training methodology (Section 6)
+
+
+# Cline auto-generation video (start to finish)
+
+https://github.com/user-attachments/assets/957c5a79-b4c2-477d-a7ae-b51581932bbc
+
+
+
